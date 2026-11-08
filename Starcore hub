@@ -1,0 +1,983 @@
+
+--==================================================
+-- STARCORE GUI V4
+-- LocalScript | StarterPlayerScripts
+--==================================================
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local MOBILE = UIS.TouchEnabled
+
+-- Remove old STARCORE
+local old = PlayerGui:FindFirstChild("STARCORE_GUI")
+if old then old:Destroy() end
+
+--==================================================
+-- COLORS / VARIABLES
+--==================================================
+
+local PURPLE = Color3.fromRGB(145, 75, 255)
+local DARK = Color3.fromRGB(18, 16, 25)
+local PANEL = Color3.fromRGB(31, 27, 42)
+local WHITE = Color3.fromRGB(245, 242, 255)
+local MUTED = Color3.fromRGB(165, 155, 185)
+
+local states = {
+    Fly = false,
+    AirWalk = false,
+    InfiniteJump = false,
+    Noclip = false,
+    SlowFalling = false,
+    AntiFall = false,
+    ESP = false,
+    Fullbright = false,
+    Freeze = false,
+    Rainbow = false
+}
+
+local Character, Humanoid, Root
+local savedWalkSpeed = 16
+local savedJumpPower = 50
+local flySpeed = 55
+local platform
+local platformY
+local flyAttachment
+local flyVelocity
+local flyOrientation
+local flyConnection
+local verticalInput = 0
+local savedLighting
+local previousPosition
+local teleportSlots = {}
+local espObjects = {}
+local connections = {}
+
+local function refreshCharacter(char)
+    Character = char
+    Humanoid = char:WaitForChild("Humanoid")
+    Root = char:WaitForChild("HumanoidRootPart")
+end
+
+if Player.Character then
+    refreshCharacter(Player.Character)
+end
+
+Player.CharacterAdded:Connect(function(char)
+    refreshCharacter(char)
+    states.Fly = false
+    states.AirWalk = false
+    states.Noclip = false
+    states.Freeze = false
+    if platform then
+        platform:Destroy()
+        platform = nil
+    end
+end)
+
+local function notify(message)
+    print("[STARCORE] " .. tostring(message))
+end
+
+--==================================================
+-- GUI
+--==================================================
+
+local Screen = Instance.new("ScreenGui")
+Screen.Name = "STARCORE_GUI"
+Screen.ResetOnSpawn = false
+Screen.IgnoreGuiInset = true
+Screen.DisplayOrder = 50
+Screen.Parent = PlayerGui
+
+-- Small loading panel, not fullscreen
+local Loading = Instance.new("Frame")
+Loading.Size = UDim2.fromOffset(230, 105)
+Loading.Position = UDim2.fromScale(0.5, 0.5)
+Loading.AnchorPoint = Vector2.new(0.5, 0.5)
+Loading.BackgroundColor3 = DARK
+Loading.BorderSizePixel = 0
+Loading.Parent = Screen
+
+local loadCorner = Instance.new("UICorner")
+loadCorner.CornerRadius = UDim.new(0, 12)
+loadCorner.Parent = Loading
+
+local loadStroke = Instance.new("UIStroke")
+loadStroke.Color = PURPLE
+loadStroke.Thickness = 1.5
+loadStroke.Parent = Loading
+
+local loadTitle = Instance.new("TextLabel")
+loadTitle.Size = UDim2.new(1, 0, 0, 42)
+loadTitle.BackgroundTransparency = 1
+loadTitle.Text = "STARCORE"
+loadTitle.TextColor3 = WHITE
+loadTitle.Font = Enum.Font.GothamBold
+loadTitle.TextSize = 22
+loadTitle.Parent = Loading
+
+local loadSub = Instance.new("TextLabel")
+loadSub.Position = UDim2.fromOffset(0, 42)
+loadSub.Size = UDim2.new(1, 0, 0, 20)
+loadSub.BackgroundTransparency = 1
+loadSub.Text = "Initializing interface..."
+loadSub.TextColor3 = MUTED
+loadSub.Font = Enum.Font.Gotham
+loadSub.TextSize = 10
+loadSub.Parent = Loading
+
+local loadBack = Instance.new("Frame")
+loadBack.Position = UDim2.fromOffset(15, 76)
+loadBack.Size = UDim2.new(1, -30, 0, 8)
+loadBack.BackgroundColor3 = PANEL
+loadBack.BorderSizePixel = 0
+loadBack.Parent = Loading
+
+local loadBar = Instance.new("Frame")
+loadBar.Size = UDim2.new(0, 0, 1, 0)
+loadBar.BackgroundColor3 = PURPLE
+loadBar.BorderSizePixel = 0
+loadBar.Parent = loadBack
+
+local loadBarCorner = Instance.new("UICorner")
+loadBarCorner.CornerRadius = UDim.new(1, 0)
+loadBarCorner.Parent = loadBar
+
+for i = 1, 100 do
+    loadBar.Size = UDim2.new(i / 100, 0, 1, 0)
+    task.wait(0.05)
+end
+
+Loading:Destroy()
+
+-- Main window
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = MOBILE and UDim2.fromOffset(260, 330)
+    or UDim2.fromOffset(740, 810)
+Main.Position = UDim2.fromScale(0.5, 0.5)
+Main.AnchorPoint = Vector2.new(0.5, 0.5)
+Main.BackgroundColor3 = DARK
+Main.BorderSizePixel = 0
+Main.ClipsDescendants = true
+Main.Parent = Screen
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 10)
+mainCorner.Parent = Main
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = PURPLE
+mainStroke.Thickness = 1.5
+mainStroke.Parent = Main
+
+-- Header
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 38)
+Header.BackgroundColor3 = PANEL
+Header.BorderSizePixel = 0
+Header.Parent = Main
+
+local HeaderTitle = Instance.new("TextLabel")
+HeaderTitle.Position = UDim2.fromOffset(10, 0)
+HeaderTitle.Size = UDim2.new(1, -85, 1, 0)
+HeaderTitle.BackgroundTransparency = 1
+HeaderTitle.Text = "✦ STARCORE GUI  |  HOME"
+HeaderTitle.TextColor3 = WHITE
+HeaderTitle.Font = Enum.Font.GothamBold
+HeaderTitle.TextSize = MOBILE and 11 or 17
+HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+HeaderTitle.Parent = Header
+
+local Minimize = Instance.new("TextButton")
+Minimize.Size = UDim2.fromOffset(34, 30)
+Minimize.Position = UDim2.new(1, -39, 0, 4)
+Minimize.Text = "−"
+Minimize.TextColor3 = WHITE
+Minimize.TextSize = 22
+Minimize.Font = Enum.Font.GothamBold
+Minimize.BackgroundColor3 = Color3.fromRGB(70, 48, 100)
+Minimize.Parent = Header
+
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(0, 6)
+minCorner.Parent = Minimize
+
+-- Dragging
+do
+    local dragging = false
+    local dragStart, startPosition
+
+    Header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPosition = Main.Position
+        end
+    end)
+
+    UIS.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            Main.Position = UDim2.new(
+                startPosition.X.Scale,
+                startPosition.X.Offset + delta.X,
+                startPosition.Y.Scale,
+                startPosition.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
+
+-- Scroll area
+local Scroll = Instance.new("ScrollingFrame")
+Scroll.Position = UDim2.fromOffset(8, 45)
+Scroll.Size = UDim2.new(1, -16, 1, -53)
+Scroll.BackgroundTransparency = 1
+Scroll.BorderSizePixel = 0
+Scroll.ScrollBarThickness = 3
+Scroll.ScrollBarImageColor3 = PURPLE
+Scroll.CanvasSize = UDim2.new()
+Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Scroll.Parent = Main
+
+local Layout = Instance.new("UIListLayout")
+Layout.Padding = UDim.new(0, 5)
+Layout.SortOrder = Enum.SortOrder.LayoutOrder
+Layout.Parent = Scroll
+
+local Padding = Instance.new("UIPadding")
+Padding.PaddingBottom = UDim.new(0, 8)
+Padding.Parent = Scroll
+
+local function section(text)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -3, 0, MOBILE and 21 or 30)
+    label.BackgroundTransparency = 1
+    label.Text = "  " .. text
+    label.TextColor3 = PURPLE
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = MOBILE and 10 or 15
+    label.Parent = Scroll
+    return label
+end
+
+local function button(text, callback)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -3, 0, MOBILE and 27 or 38)
+    b.BackgroundColor3 = PANEL
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = WHITE
+    b.Font = Enum.Font.GothamMedium
+    b.TextSize = MOBILE and 10 or 14
+    b.AutoButtonColor = true
+    b.Parent = Scroll
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 6)
+    c.Parent = b
+
+    local s = Instance.new("UIStroke")
+    s.Color = Color3.fromRGB(65, 54, 83)
+    s.Thickness = 1
+    s.Parent = b
+
+    b.Activated:Connect(function()
+        local ok, err = pcall(callback)
+        if not ok then
+            warn("[STARCORE BUTTON ERROR] " .. text .. ": " .. tostring(err))
+            notify(text .. " failed")
+        end
+    end)
+
+    return b
+end
+
+local function toggle(name, callback)
+    states[name] = false
+    local b
+
+    b = button(name .. "  [OFF]", function()
+        local nextState = not states[name]
+        local ok, err = pcall(function()
+            callback(nextState)
+        end)
+
+        if not ok then
+            warn("[STARCORE TOGGLE ERROR] " .. name .. ": " .. tostring(err))
+            notify(name .. " failed")
+            return
+        end
+
+        states[name] = nextState
+        b.Text = name .. (nextState and "  [ON]" or "  [OFF]")
+        b.BackgroundColor3 = nextState
+            and Color3.fromRGB(65, 42, 100)
+            or PANEL
+    end)
+
+    return b
+end
+
+--==================================================
+-- MINIMIZE
+--==================================================
+
+local minimized = false
+local Restore = Instance.new("TextButton")
+Restore.Size = UDim2.fromOffset(48, 48)
+Restore.Position = UDim2.new(1, -65, 0.5, -24)
+Restore.BackgroundColor3 = DARK
+Restore.Text = "SC"
+Restore.TextColor3 = WHITE
+Restore.Font = Enum.Font.GothamBold
+Restore.TextSize = 15
+Restore.Visible = false
+Restore.Parent = Screen
+
+local restoreCorner = Instance.new("UICorner")
+restoreCorner.CornerRadius = UDim.new(1, 0)
+restoreCorner.Parent = Restore
+
+local restoreStroke = Instance.new("UIStroke")
+restoreStroke.Color = PURPLE
+restoreStroke.Thickness = 2
+restoreStroke.Parent = Restore
+
+Minimize.Activated:Connect(function()
+    minimized = true
+    Main.Visible = false
+    Restore.Visible = true
+end)
+
+Restore.Activated:Connect(function()
+    minimized = false
+    Main.Visible = true
+    Restore.Visible = false
+end)
+
+--==================================================
+-- PLAYER
+--==================================================
+
+section("PLAYER")
+
+local function makeInput(title, default, callback)
+    local holder = Instance.new("Frame")
+    holder.Size = UDim2.new(1, -3, 0, MOBILE and 29 or 38)
+    holder.BackgroundColor3 = PANEL
+    holder.BorderSizePixel = 0
+    holder.Parent = Scroll
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.55, 0, 1, 0)
+    label.Position = UDim2.fromOffset(8, 0)
+    label.BackgroundTransparency = 1
+    label.Text = title
+    label.TextColor3 = WHITE
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.Gotham
+    label.TextSize = MOBILE and 10 or 13
+    label.Parent = holder
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0.35, -5, 0.75, 0)
+    box.Position = UDim2.new(0.63, 0, 0.12, 0)
+    box.BackgroundColor3 = DARK
+    box.TextColor3 = WHITE
+    box.Text = tostring(default)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = MOBILE and 10 or 13
+    box.ClearTextOnFocus = false
+    box.Parent = holder
+
+    local bc = Instance.new("UICorner")
+    bc.CornerRadius = UDim.new(0, 5)
+    bc.Parent = box
+
+    box.FocusLost:Connect(function()
+        local number = tonumber(box.Text)
+        if number then
+            callback(number)
+        else
+            box.Text = tostring(default)
+        end
+    end)
+end
+
+makeInput("WalkSpeed", 16, function(value)
+    if Humanoid then
+        Humanoid.WalkSpeed = math.clamp(value, 0, 250)
+    end
+end)
+
+button("Reset WalkSpeed", function()
+    if Humanoid then Humanoid.WalkSpeed = 16 end
+end)
+
+makeInput("JumpPower", 50, function(value)
+    if Humanoid then
+        Humanoid.UseJumpPower = true
+        Humanoid.JumpPower = math.clamp(value, 0, 250)
+    end
+end)
+
+button("Reset JumpPower", function()
+    if Humanoid then
+        Humanoid.UseJumpPower = true
+        Humanoid.JumpPower = 50
+    end
+end)
+
+toggle("InfiniteJump", function(on)
+    states.InfiniteJump = on
+end)
+
+toggle("Freeze", function(on)
+    if not Humanoid then return end
+    if on then
+        savedWalkSpeed = Humanoid.WalkSpeed
+        savedJumpPower = Humanoid.JumpPower
+        Humanoid.WalkSpeed = 0
+        Humanoid.JumpPower = 0
+    else
+        Humanoid.WalkSpeed = savedWalkSpeed
+        Humanoid.JumpPower = savedJumpPower
+    end
+end)
+
+button("Reset Character", function()
+    if Humanoid then Humanoid.Health = 0 end
+end)
+
+-- Infinite Jump works with mobile jump button
+connections.jump = UIS.JumpRequest:Connect(function()
+    if states.InfiniteJump and Humanoid and Humanoid.Health > 0 then
+        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+--==================================================
+-- MOVEMENT
+--==================================================
+
+section("MOVEMENT")
+
+-- Fly vertical joystick
+local VerticalPad = Instance.new("Frame")
+VerticalPad.Name = "FlyVerticalJoystick"
+VerticalPad.Size = UDim2.fromOffset(100, 100)
+VerticalPad.Position = UDim2.new(1, -118, 0.63, -50)
+VerticalPad.BackgroundColor3 = Color3.fromRGB(25, 22, 35)
+VerticalPad.BackgroundTransparency = 0.15
+VerticalPad.Visible = false
+VerticalPad.ZIndex = 20
+VerticalPad.Parent = Screen
+
+local padCorner = Instance.new("UICorner")
+padCorner.CornerRadius = UDim.new(1, 0)
+padCorner.Parent = VerticalPad
+
+local padStroke = Instance.new("UIStroke")
+padStroke.Color = PURPLE
+padStroke.Thickness = 2
+padStroke.Parent = VerticalPad
+
+local PadLabel = Instance.new("TextLabel")
+PadLabel.Size = UDim2.new(1, 0, 1, 0)
+PadLabel.BackgroundTransparency = 1
+PadLabel.Text = "FLY\nUP / DOWN"
+PadLabel.TextColor3 = MUTED
+PadLabel.TextSize = 10
+PadLabel.Font = Enum.Font.GothamBold
+PadLabel.ZIndex = 21
+PadLabel.Parent = VerticalPad
+
+local PadKnob = Instance.new("Frame")
+PadKnob.Size = UDim2.fromOffset(34, 34)
+PadKnob.Position = UDim2.fromScale(0.5, 0.5)
+PadKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+PadKnob.BackgroundColor3 = PURPLE
+PadKnob.ZIndex = 22
+PadKnob.Parent = VerticalPad
+
+local knobCorner = Instance.new("UICorner")
+knobCorner.CornerRadius = UDim.new(1, 0)
+knobCorner.Parent = PadKnob
+
+local padDragging = false
+local padTouch
+
+local function updateVerticalPad(input)
+    local center = VerticalPad.AbsolutePosition + VerticalPad.AbsoluteSize / 2
+    local delta = input.Position - center
+    local maxDistance = 30
+    local y = math.clamp(delta.Y, -maxDistance, maxDistance)
+
+    PadKnob.Position = UDim2.new(0.5, 0, 0.5, y)
+    verticalInput = -y / maxDistance
+end
+
+VerticalPad.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+    or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        padDragging = true
+        padTouch = input
+        updateVerticalPad(input)
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if padDragging then
+        if input.UserInputType == Enum.UserInputType.Touch
+        or input.UserInputType == Enum.UserInputType.MouseMovement then
+            updateVerticalPad(input)
+        end
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch
+    or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if padDragging then
+            padDragging = false
+            padTouch = nil
+            verticalInput = 0
+            PadKnob.Position = UDim2.fromScale(0.5, 0.5)
+        end
+    end
+end)
+
+local function stopFly()
+    states.Fly = false
+    VerticalPad.Visible = false
+    verticalInput = 0
+
+    if flyConnection then
+        flyConnection:Disconnect()
+        flyConnection = nil
+    end
+
+    if flyVelocity then
+        flyVelocity:Destroy()
+        flyVelocity = nil
+    end
+
+    if flyOrientation then
+        flyOrientation:Destroy()
+        flyOrientation = nil
+    end
+
+    if flyAttachment then
+        flyAttachment:Destroy()
+        flyAttachment = nil
+    end
+
+    if Humanoid then
+        Humanoid.AutoRotate = true
+        Humanoid.PlatformStand = false
+    end
+end
+
+local function startFly()
+    if not Root or not Humanoid then
+        error("Character not ready")
+    end
+
+    stopFly()
+    states.Fly = true
+    VerticalPad.Visible = MOBILE
+
+    Humanoid.AutoRotate = false
+    Humanoid.PlatformStand = false
+
+    flyAttachment = Instance.new("Attachment")
+    flyAttachment.Name = "STARCORE_FlyAttachment"
+    flyAttachment.Parent = Root
+
+    flyOrientation = Instance.new("AlignOrientation")
+    flyOrientation.Mode = Enum.OrientationAlignmentMode.OneAttachment
+    flyOrientation.Attachment0 = flyAttachment
+    flyOrientation.MaxTorque = 100000000
+    flyOrientation.Responsiveness = 20
+    flyOrientation.Parent = Root
+
+    flyVelocity = Instance.new("LinearVelocity")
+    flyVelocity.Attachment0 = flyAttachment
+    flyVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
+    flyVelocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+    flyVelocity.MaxForce = 100000000
+    flyVelocity.VectorVelocity = Vector3.zero
+    flyVelocity.Parent = Root
+
+    flyConnection = RunService.RenderStepped:Connect(function()
+        if not states.Fly or not Root or not Root.Parent then
+            stopFly()
+            return
+        end
+
+        local move = Humanoid.MoveDirection
+        local vertical = verticalInput
+
+        if not MOBILE then
+            if UIS:IsKeyDown(Enum.KeyCode.Space) then
+                vertical = 1
+            elseif UIS:IsKeyDown(Enum.KeyCode.LeftControl) then
+                vertical = -1
+            end
+        end
+
+        local direction = Vector3.new(move.X, vertical, move.Z)
+        if direction.Magnitude > 1 then
+            direction = direction.Unit
+        end
+
+        flyVelocity.VectorVelocity = direction * flySpeed
+
+        local camera = workspace.CurrentCamera
+        if camera then
+            flyOrientation.CFrame = CFrame.lookAt(
+                Root.Position,
+                Root.Position + camera.CFrame.LookVector
+            )
+        end
+    end)
+end
+
+toggle("Fly", function(on)
+    if on then
+        startFly()
+    else
+        stopFly()
+    end
+end)
+
+makeInput("Fly Speed", 55, function(value)
+    flySpeed = math.clamp(value, 5, 200)
+end)
+
+-- AirWalk: original-style following platform
+local function stopAirWalk()
+    states.AirWalk = false
+    if platform then
+        platform:Destroy()
+        platform = nil
+    end
+end
+
+local function startAirWalk()
+    if not Root then error("Character not ready") end
+    stopAirWalk()
+
+    states.AirWalk = true
+    platformY = Root.Position.Y - 3
+
+    platform = Instance.new("Part")
+    platform.Name = "STARCORE_AirWalkPlatform"
+    platform.Size = Vector3.new(5, 1, 5)
+    platform.Transparency = 1
+    platform.Anchored = true
+    platform.CanCollide = true
+    platform.CanTouch = false
+    platform.CanQuery = false
+    platform.Parent = workspace
+
+    task.spawn(function()
+        while states.AirWalk and platform and platform.Parent do
+            if Root and Root.Parent then
+                platform.Position = Vector3.new(
+                    Root.Position.X,
+                    platformY,
+                    Root.Position.Z
+                )
+            end
+            task.wait()
+        end
+    end)
+end
+
+toggle("AirWalk", function(on)
+    if on then
+        startAirWalk()
+    else
+        stopAirWalk()
+    end
+end)
+
+toggle("SlowFalling", function(on)
+    if on then
+        if not Humanoid then error("Character not ready") end
+        Humanoid.UseJumpPower = true
+    end
+end)
+
+toggle("Noclip", function(on)
+    states.Noclip = on
+end)
+
+toggle("AntiFall", function(on)
+    if on then
+        if not Root then error("Character not ready") end
+    end
+end)
+
+--==================================================
+-- TELEPORT
+--==================================================
+
+section("TELEPORT")
+
+button("Save Position 1", function()
+    if Root then teleportSlots[1] = Root.CFrame; notify("Position 1 saved") end
+end)
+
+button("Save Position 2", function()
+    if Root then teleportSlots[2] = Root.CFrame; notify("Position 2 saved") end
+end)
+
+button("Save Position 3", function()
+    if Root then teleportSlots[3] = Root.CFrame; notify("Position 3 saved") end
+end)
+
+button("Save Position 4", function()
+    if Root then teleportSlots[4] = Root.CFrame; notify("Position 4 saved") end
+end)
+
+button("Save Position 5", function()
+    if Root then teleportSlots[5] = Root.CFrame; notify("Position 5 saved") end
+end)
+
+for i = 1, 5 do
+    local slot = i
+    button("Go to Position " .. slot, function()
+        if not Root then error("Character not ready") end
+        if not teleportSlots[slot] then error("Position not saved") end
+        previousPosition = Root.CFrame
+        Root.CFrame = teleportSlots[slot]
+    end)
+end
+
+button("Return Previous Position", function()
+    if not Root then error("Character not ready") end
+    if not previousPosition then error("No previous position") end
+    local current = Root.CFrame
+    Root.CFrame = previousPosition
+    previousPosition = current
+end)
+
+button("Teleport to Spawn", function()
+    if not Root then error("Character not ready") end
+    local spawnLocation = workspace:FindFirstChildWhichIsA("SpawnLocation", true)
+    if spawnLocation then
+        previousPosition = Root.CFrame
+        Root.CFrame = spawnLocation.CFrame + Vector3.new(0, 4, 0)
+    else
+        error("No SpawnLocation found")
+    end
+end)
+
+--==================================================
+-- VISUAL
+--==================================================
+
+section("VISUAL")
+
+local function clearESP()
+    for _, item in ipairs(espObjects) do
+        if item and item.Parent then
+            item:Destroy()
+        end
+    end
+    table.clear(espObjects)
+end
+
+local function addESP(target)
+    if target == Player or not target.Character then return end
+    local char = target.Character
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "STARCORE_Highlight"
+    highlight.Adornee = char
+    highlight.FillColor = PURPLE
+    highlight.OutlineColor = WHITE
+    highlight.FillTransparency = 0.65
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = Screen
+    table.insert(espObjects, highlight)
+
+    local head = char:FindFirstChild("Head")
+    if head then
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "STARCORE_NameESP"
+        billboard.Adornee = head
+        billboard.Size = UDim2.fromOffset(150, 30)
+        billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = Screen
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.fromScale(1, 1)
+        label.BackgroundTransparency = 1
+        label.TextColor3 = WHITE
+        label.TextStrokeTransparency = 0.2
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 12
+        label.Text = target.Name
+        label.Parent = billboard
+
+        table.insert(espObjects, billboard)
+    end
+end
+
+local function rebuildESP()
+    clearESP()
+    if not states.ESP then return end
+    for _, target in ipairs(Players:GetPlayers()) do
+        addESP(target)
+    end
+end
+
+toggle("ESP", function(on)
+    states.ESP = on
+    rebuildESP()
+end)
+
+toggle("Fullbright", function(on)
+    if on then
+        savedLighting = {
+            Brightness = Lighting.Brightness,
+            ClockTime = Lighting.ClockTime,
+            GlobalShadows = Lighting.GlobalShadows,
+            Ambient = Lighting.Ambient,
+            OutdoorAmbient = Lighting.OutdoorAmbient
+        }
+
+        Lighting.Brightness = 3
+        Lighting.ClockTime = 14
+        Lighting.GlobalShadows = false
+        Lighting.Ambient = Color3.new(1, 1, 1)
+        Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+    elseif savedLighting then
+        for property, value in pairs(savedLighting) do
+            Lighting[property] = value
+        end
+    end
+end)
+
+--==================================================
+-- SETTINGS
+--==================================================
+
+section("SETTINGS")
+
+toggle("Rainbow", function(on)
+    states.Rainbow = on
+end)
+
+makeInput("FOV", 70, function(value)
+    local camera = workspace.CurrentCamera
+    if camera then
+        camera.FieldOfView = math.clamp(value, 40, 120)
+    end
+end)
+
+button("Reset FOV", function()
+    if workspace.CurrentCamera then
+        workspace.CurrentCamera.FieldOfView = 70
+    end
+end)
+
+button("Close STARCORE", function()
+    stopFly()
+    stopAirWalk()
+    clearESP()
+    Screen:Destroy()
+end)
+
+--==================================================
+-- PLAYER / WORLD UPDATE LOOP
+--==================================================
+
+connections.update = RunService.Stepped:Connect(function()
+    if states.Noclip and Character then
+        for _, part in ipairs(Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+
+    if states.SlowFalling and Root then
+        local velocity = Root.AssemblyLinearVelocity
+        if velocity.Y < -8 then
+            Root.AssemblyLinearVelocity = Vector3.new(
+                velocity.X,
+                math.max(velocity.Y, -8),
+                velocity.Z
+            )
+        end
+    end
+
+    if states.AntiFall and Root and Humanoid then
+        if Humanoid.FloorMaterial == Enum.Material.Air
+        and Root.Position.Y < -30 then
+            local spawnLocation = workspace:FindFirstChildWhichIsA("SpawnLocation", true)
+            if spawnLocation then
+                Root.CFrame = spawnLocation.CFrame + Vector3.new(0, 5, 0)
+            end
+        end
+    end
+end)
+
+connections.rainbow = RunService.RenderStepped:Connect(function()
+    if states.Rainbow and Main.Parent then
+        local hue = (os.clock() % 5) / 5
+        mainStroke.Color = Color3.fromHSV(hue, 0.8, 1)
+        padStroke.Color = Color3.fromHSV(hue, 0.8, 1)
+    end
+end)
+
+Players.PlayerAdded:Connect(function(target)
+    target.CharacterAdded:Connect(function()
+        task.wait(1)
+        if states.ESP then
+            rebuildESP()
+        end
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function()
+    if states.ESP then
+        task.defer(rebuildESP)
+    end
+end)
+
+Screen.Destroying:Connect(function()
+    stopFly()
+    stopAirWalk()
+    clearESP()
+
+    for _, connection in pairs(connections) do
+        if connection then
+            connection:Disconnect()
+        end
+    end
+end)
+
+notify("STARCORE V4 loaded")
